@@ -1,0 +1,233 @@
+---
+title: "MNIST"
+output: html_document
+date: '2022-06-17'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r eval = FALSE}
+install.packages("torch")
+install.packages("torchvision")
+install.packages("luz")
+# install.packages("zeallot")
+# install.packages("magick")
+# install.packages("cowplot")
+# install.packages("pins")
+# install.packages("zip")
+```
+
+
+[SOURCE](https://github.com/mlverse/torch-learnr/blob/master/tutorial-useR-2021/fr/torch.Rmd)
+
+
+
+```{r}
+# deep learning (incl. dependencies)
+library(torch)
+library(torchvision)
+library(luz)
+```
+
+
+
+Dans `torch`, les données sont fournies à un réseau en utilisant des `dataset`s et des `dataloaders`. Leurs responsabilités respectives sont les suivantes :
+
+-   `dataset` : Renvoie un seul élément de formation, de validation ou de test. 
+Optionnellement, s'occupe de tout prétraitement requis.
+
+-   `dataloader` : Introduit les données dans le modèle. Normalement, cela se fait par lots de taille configurable. En option, un `dataloader` peut mélanger les données et organiser la parallélisation sur un sous-ensemble de processeurs disponibles.
+(Source : repo github mlverse/torch-learner)
+
+
+## Etape 1 : créer le dataset
+
+```{r, eval=FALSE, echo=TRUE}
+dir <- "data/mnist" 
+ds <- mnist_dataset(
+  dir,
+  download = TRUE,
+  train = FALSE,
+  transform = function(x) {
+    x %>% transform_to_tensor() 
+  }
+)
+```
+
+```{r}
+class(ds)
+```
+
+```{r}
+str(ds)
+```
+
+```{r}
+ds[1]
+```
+
+```{r}
+ds$classes
+```
+
+
+
+
+
+Création des ensembles d'apprentissage (train) et de validation (valid)
+
+```{r, eval=FALSE, echo=TRUE}
+train_id <- sample.int(length(ds), size = 0.7*length(ds))
+train_ds <- dataset_subset(ds, indices = train_id)
+valid_ds <- dataset_subset(ds, indices = which( !seq_along(ds) %in% train_id))
+```
+
+```{r}
+length(train_ds)
+length(valid_ds)
+```
+
+
+## Etape 2 : Créer le dataloader
+
+```{r}
+taille_batch <- 128
+ceiling(length(train_ds)/taille_batch) # nb de batchs en apprentissage
+ceiling(length(valid_ds)/taille_batch) # nb de batchs en validation
+```
+
+```{r, eval=FALSE, echo=TRUE}
+train_dl <- dataloader(train_ds, batch_size = taille_batch, shuffle = TRUE)
+valid_dl <- dataloader(valid_ds, batch_size = taille_batch, shuffle = FALSE)
+```
+
+Avec `dataloader`s, `length()` indique le nombre des *lots* :
+
+```{r, eval=FALSE, echo=TRUE}
+length(train_dl)
+length(valid_dl)
+```
+
+
+```{r}
+batch <- train_dl$.iter()$.next()
+class(batch)
+str(batch)
+batch[[1]]
+```
+
+A ADAPTER : PAS DE RGB ici 
+```{r}
+images <- as_array(batch[[1]]) %>% aperm(perm = c(1, 3, 4, 2))
+mean <- c(0.485, 0.456, 0.406)
+std <- c(0.229, 0.224, 0.225)
+images <- std * images + mean
+images <- images * 255
+images[images > 255] <- 255
+images[images < 0] <- 0
+
+par(mfcol = c(4,6), mar = rep(1, 4))
+
+images %>%
+  purrr::array_tree(1) %>%
+  purrr::set_names(class_names[as_array(classes)]) %>%
+  purrr::map(as.raster, max = 255) %>%
+  purrr::iwalk(~{plot(.x); title(.y)})
+```
+
+
+## Etape 3 : définir le modèle
+
+```{r, eval=FALSE, echo=TRUE}
+net <- nn_module(
+  "Net",
+  initialize = function(num_classes) {
+    self$conv1 <- nn_conv2d(1, 32, 3, 1)
+    self$conv2 <- nn_conv2d(32, 64, 3, 1)
+    self$dropout1 <- nn_dropout2d(0.25)
+    self$dropout2 <- nn_dropout2d(0.5)
+    self$fc1 <- nn_linear(9216, 128)
+    self$fc2 <- nn_linear(128, num_classes)
+  },
+  forward = function(x) {
+    x %>% 
+      self$conv1() %>% 
+      nnf_relu() %>% 
+      self$conv2() %>% 
+      nnf_relu() %>% 
+      nnf_max_pool2d(2) %>% 
+      self$dropout1() %>% 
+      torch_flatten(start_dim = 2) %>% 
+      self$fc1() %>% 
+      nnf_relu() %>% 
+      self$dropout2() %>% 
+      self$fc2()
+  }
+)
+```
+
+```{r}
+class(net)
+```
+
+```{r}
+str(net)
+```
+
+
+## Etape 4 : Entraînement
+
+
+- `luz::setup()` pour configurer la fonction de perte et l'optimiseur à utiliser ainsi que 
+pour demander le calcul de certaines métriques (accuracy par exemple)
+- `luz::fit()` pour lancer l'apprentissage
+
+Parmi les optimiseurs disponibles, il y a notamment les plus couramment utilisés dans l'apprentissage profond :
+- Adam (`optim_adam()`),
+- RMSProp (`optim_rmsprop()`), 
+- Stochastic Gradient Descent (SGD ; `optim_sgd()`).
+
+
+```{r, eval=FALSE, echo=TRUE}
+fitted <- net %>%
+  setup(
+    loss = nn_cross_entropy_loss(),
+    optimizer = optim_adam,
+    metrics = list(
+      luz_metric_accuracy()
+    )
+  ) %>%
+  set_hparams(num_classes = 10) %>%
+  fit(train_dl, epochs = 3, valid_data = valid_dl, verbose = TRUE)
+```
+
+
+## Etape 5 : Prédictions
+
+```{r, eval=FALSE, echo=TRUE}
+preds <- predict(fitted, valid_dl)
+preds[1:10, ]
+```
+
+
+La classe la mieux ajustée est celle pour laquelle la valeur du tenseur (le score) est la plus élevée. Si, à la place de scores non-normalisés, nous souhaitons des probabilités, nous pouvons faire passer les scores bruts par un `softmax` qui transformera les tenseurs en un vecteur de probabilités d'appartenir à chacune des 10 classes.
+
+
+- En lignes : les images  
+- En colonnes : les probas d'appartenance aux classes
+
+```{r, eval=FALSE, echo=TRUE}
+(nnf_softmax(preds[1:5, ], dim = 2))$to(device = "cpu") %>% as.matrix() %>% round(2)
+```
+
+
+## Sauvegarde et chargement de modèles
+
+```{r, eval=FALSE, echo=TRUE}
+luz_save(fitted, "mnist-cnn.pt")
+copy <- luz_load("mnist-cnn.pt")
+```
+
+

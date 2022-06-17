@@ -1,0 +1,101 @@
+---
+title: "Brain image segmentation"
+output: html_document
+date: '2022-06-17'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "/home/rstudio/ml")
+```
+
+Source : [Brain image segmentation notebook](https://blogs.rstudio.com/ai/posts/2020-11-30-torch-brain-segmentation/)
+
+```{r eval = FALSE}
+install.packages("torch")
+install.packages("torchvision")
+install.packages("zeallot")
+install.packages("magick")
+install.packages("cowplot")
+install.packages("pins")
+install.packages("zip")
+```
+
+
+
+```{r}
+# deep learning (incl. dependencies)
+library(torch)
+library(torchvision)
+
+# data wrangling
+library(tidyverse)
+library(zeallot)
+
+# image processing and visualization
+library(magick)
+library(cowplot)
+
+# dataset loading 
+library(pins)
+library(zip)
+
+torch_manual_seed(777)
+set.seed(777)
+```
+
+## Files and directories management 
+
+```{r}
+# use your own kaggle.json here
+pins::board_register_kaggle(token = "kaggle.json")
+
+files <- pins::pin_get("mateuszbuda/lgg-mri-segmentation", board = "kaggle",  extract = FALSE)
+class(files)
+files
+
+train_dir <- "data/mri_train"
+valid_dir <- "data/mri_valid"
+
+#remove files or directories
+if(dir.exists(train_dir)) unlink(train_dir, recursive = TRUE, force = TRUE) 
+if(dir.exists(valid_dir)) unlink(valid_dir, recursive = TRUE, force = TRUE)
+
+zip::unzip(files, exdir = "data")
+
+file.rename("data/m", train_dir)
+unlink("data/segmentation", recursive = TRUE)
+dir.create(valid_dir)
+```
+
+### Validation dataset
+
+The validation directory is filled with a sample of files moved from train 
+directory to validation directory.
+
+```{r}
+patients <- list.dirs(train_dir, recursive = FALSE)
+length(patients) # 112 patients
+
+valid_indices <- sample(1:length(patients), 30)
+
+for (i in valid_indices) {
+  dir.create(file.path(valid_dir, basename(patients[i])))
+  for (f in list.files(patients[i])) {    
+    file.rename(file.path(train_dir, basename(patients[i]), f), file.path(valid_dir, basename(patients[i]), f))
+  }
+  unlink(file.path(train_dir, basename(patients[i])), recursive = TRUE)
+}
+```
+
+Now the train set is composed by 82 patients and the valid set is composed by 30 patients
+
+```{r}
+length(list.dirs(train_dir, recursive = FALSE))
+length(list.dirs(valid_dir, recursive = FALSE))
+```
+
+## Build a torch dataset
+
+
+
