@@ -120,21 +120,24 @@ batch[[1]]
 
 A ADAPTER : PAS DE RGB ici 
 ```{r}
-images <- as_array(batch[[1]]) %>% aperm(perm = c(1, 3, 4, 2))
-mean <- c(0.485, 0.456, 0.406)
-std <- c(0.229, 0.224, 0.225)
-images <- std * images + mean
-images <- images * 255
-images[images > 255] <- 255
-images[images < 0] <- 0
+class_names <- ds$classes
+length(class_names)
 
-par(mfcol = c(4,6), mar = rep(1, 4))
 
+images <- as_array(batch[[1]][1:30]) %>% aperm(perm = c(1, 4, 3, 2))
+classes <- batch$y[1:30]
+grey_scale <- rev(grey(seq(0, 1, length = 256)))
+
+par(mfrow = c(5,6), mar = rep(1, 4))
 images %>%
+   # to list
   purrr::array_tree(1) %>%
-  purrr::set_names(class_names[as_array(classes)]) %>%
-  purrr::map(as.raster, max = 255) %>%
-  purrr::iwalk(~{plot(.x); title(.y)})
+  #put class names
+  purrr::set_names(class_names[as_array(classes)]) %>% 
+  #each image is transform into a matrix
+  purrr::map(matrix,  nrow = 28, byrow = FALSE) %>% 
+  #plot each image
+  purrr::iwalk(~{image(.x, , useRaster=TRUE, axes=FALSE, col = grey_scale); title(.y)})
 ```
 
 
@@ -223,7 +226,13 @@ La classe la mieux ajustée est celle pour laquelle la valeur du tenseur (le sco
 ```
 
 
-## Sauvegarde et chargement de modèles
+## Bilan
+
+Graphiques pour visualiser les performances du modèle
+
+## Addenda 
+
+Sauvegarde et chargement de modèles
 
 ```{r, eval=FALSE, echo=TRUE}
 luz_save(fitted, "mnist-cnn.pt")
